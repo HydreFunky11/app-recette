@@ -7,7 +7,7 @@ import RecipeCard from '@/components/RecipeCard';
 import ScannerModal from '@/components/ScannerModal';
 import RecipeReviewModal from '@/components/RecipeReviewModal';
 import RecipeDetailModal from '@/components/RecipeDetailModal';
-import GoogleSignInButton from '@/components/GoogleSignInButton';
+import AuthForm from '@/components/AuthForm';
 import {
   UtensilsCrossed,
   Plus,
@@ -203,7 +203,7 @@ export default function HomePage() {
         </div>
 
         <div className="space-y-4 pb-4">
-          <GoogleSignInButton />
+          <AuthForm />
           <p className="text-center text-[11px] text-stone-400">
             Accès sécurisé pour votre cercle de cuisiniers
           </p>
