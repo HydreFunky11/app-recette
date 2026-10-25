@@ -6,10 +6,16 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+
+  // Si les clés Supabase ne sont pas configurées, continuer simplement
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return supabaseResponse;
+  }
+
+  try {
+    const supabase = createServerClient(url, anonKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -24,25 +30,12 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
-    }
-  );
+    });
 
-  // refreshing the auth token
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  // Protect internal routes if needed
-  const isAuthPage = request.nextUrl.pathname.startsWith('/auth') || request.nextUrl.pathname === '/login';
-  const isPublicAsset = 
-    request.nextUrl.pathname.startsWith('/_next') ||
-    request.nextUrl.pathname.startsWith('/api') ||
-    request.nextUrl.pathname.startsWith('/icons') ||
-    request.nextUrl.pathname === '/manifest.json' ||
-    request.nextUrl.pathname === '/favicon.ico';
-
-  if (!user && !isAuthPage && !isPublicAsset && request.nextUrl.pathname !== '/') {
-    // Optionally redirect unauthenticated users to /login
+    // Rafraîchir le token de session
+    await supabase.auth.getUser();
+  } catch (err) {
+    console.error('Middleware auth session refresh error:', err);
   }
 
   return supabaseResponse;
