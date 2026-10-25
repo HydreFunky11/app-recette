@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Check, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles } from 'lucide-react';
 import { ExtractedRecipeData, Ingredient, Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
@@ -33,6 +33,54 @@ export default function RecipeReviewModal({
   const [error, setError] = useState<string | null>(null);
 
   const supabase = createClient();
+
+  // Synchroniser l'état dès que de nouvelles données arrivent de l'IA
+  useEffect(() => {
+    if (initialData) {
+      setTitle(initialData.title || 'Recette sans titre');
+      setDescription(initialData.description || '');
+      setServings(Number(initialData.servings) || 4);
+      setPrepTime(Number(initialData.prep_time_minutes) || 15);
+      setCookTime(Number(initialData.cook_time_minutes) || 20);
+
+      // Normalisation intelligente des ingrédients
+      if (Array.isArray(initialData.ingredients) && initialData.ingredients.length > 0) {
+        const normalized: Ingredient[] = initialData.ingredients.map((ing: any) => {
+          if (typeof ing === 'string') {
+            return { name: ing, quantity: '', unit: '' };
+          }
+          return {
+            name: String(ing.name || ing.item || ing.ingredient || ing.label || ''),
+            quantity: String(ing.quantity || ing.amount || ing.qty || ''),
+            unit: String(ing.unit || ing.measure || ''),
+          };
+        });
+        setIngredients(normalized);
+      } else {
+        setIngredients([]);
+      }
+
+      // Normalisation intelligente des étapes
+      if (Array.isArray(initialData.steps) && initialData.steps.length > 0) {
+        const normalizedSteps: string[] = initialData.steps.map((st: any) => {
+          if (typeof st === 'string') return st;
+          return st.instruction || st.text || st.step || st.description || JSON.stringify(st);
+        });
+        setSteps(normalizedSteps);
+      } else {
+        setSteps([]);
+      }
+
+      // Normalisation des tags
+      if (Array.isArray(initialData.tags) && initialData.tags.length > 0) {
+        setTags(initialData.tags.join(', '));
+      } else if (typeof initialData.tags === 'string') {
+        setTags(initialData.tags);
+      } else {
+        setTags('Maison');
+      }
+    }
+  }, [initialData]);
 
   if (!isOpen || !initialData) return null;
 
@@ -145,7 +193,7 @@ export default function RecipeReviewModal({
       onSaved(data);
       onClose();
     } catch (err: any) {
-      console.error(err);
+      console.error('Erreur sauvegarde recette:', err);
       setError(err.message || 'Erreur lors de la sauvegarde de la recette.');
     } finally {
       setIsSaving(false);

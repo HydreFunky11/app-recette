@@ -7,6 +7,7 @@ import RecipeCard from '@/components/RecipeCard';
 import ScannerModal from '@/components/ScannerModal';
 import RecipeReviewModal from '@/components/RecipeReviewModal';
 import RecipeDetailModal from '@/components/RecipeDetailModal';
+import RecipeEditModal from '@/components/RecipeEditModal';
 import AuthForm from '@/components/AuthForm';
 import {
   UtensilsCrossed,
@@ -37,6 +38,7 @@ export default function HomePage() {
   const [scannedImageFile, setScannedImageFile] = useState<File | null>(null);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [recipeToEdit, setRecipeToEdit] = useState<Recipe | null>(null);
 
   const supabase = createClient();
 
@@ -134,6 +136,17 @@ export default function HomePage() {
   // 7. Supprimer recette
   const handleRecipeDeleted = (id: string) => {
     setRecipes((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  // 8. Modifier recette
+  const handleOpenEdit = (recipe: Recipe) => {
+    setRecipeToEdit(recipe);
+  };
+
+  const handleRecipeUpdated = (updated: Recipe) => {
+    setRecipes((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    setSelectedRecipe(updated);
+    setRecipeToEdit(null);
   };
 
   // Filtrage
@@ -368,24 +381,36 @@ export default function HomePage() {
         onScanComplete={handleScanComplete}
       />
 
-      <RecipeReviewModal
-        isOpen={isReviewOpen}
-        initialData={scannedData}
-        imageFile={scannedImageFile}
-        onClose={() => {
-          setIsReviewOpen(false);
-          setScannedData(null);
-          setScannedImageFile(null);
-        }}
-        onSaved={handleRecipeSaved}
-      />
+      {isReviewOpen && scannedData && (
+        <RecipeReviewModal
+          isOpen={isReviewOpen}
+          initialData={scannedData}
+          imageFile={scannedImageFile}
+          onClose={() => {
+            setIsReviewOpen(false);
+            setScannedData(null);
+            setScannedImageFile(null);
+          }}
+          onSaved={handleRecipeSaved}
+        />
+      )}
 
       <RecipeDetailModal
         recipe={selectedRecipe}
         onClose={() => setSelectedRecipe(null)}
         onDelete={handleRecipeDeleted}
         onToggleFavorite={(id, isFav) => handleToggleFavorite(null, id, isFav)}
+        onEdit={handleOpenEdit}
       />
+
+      {recipeToEdit && (
+        <RecipeEditModal
+          isOpen={!!recipeToEdit}
+          recipe={recipeToEdit}
+          onClose={() => setRecipeToEdit(null)}
+          onUpdated={handleRecipeUpdated}
+        />
+      )}
     </div>
   );
 }

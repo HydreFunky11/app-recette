@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Non autorisé. Veuillez vous connecter.' },
+        { error: 'Session expirée ou non connecté. Veuillez vous connecter pour scanner.' },
         { status: 401 }
       );
     }
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     // 2. Récupération de l'image
     const formData = await req.formData();
     const file = formData.get('image') as File | null;
+    const isHandwritten = formData.get('isHandwritten') === 'true';
 
     if (!file) {
       return NextResponse.json(
@@ -45,41 +46,44 @@ export async function POST(req: NextRequest) {
     const mimeType = file.type || 'image/jpeg';
 
     // 3. Prompt spécialisé pour recettes manuscrites ou imprimées
-    const prompt = `Tu es un expert culinaire et spécialiste de la reconnaissance de texte (OCR), particulièrement doué pour déchiffrer les écritures manuscrites difficiles (carnets de grand-mère, fiches de recettes griffonnées, ratures, abréviations culinaires comme càs, càc, pincée, etc.) ainsi que les recettes imprimées.
+    const prompt = `Tu es un expert culinaire et spécialiste de la reconnaissance de texte (OCR), particulièrement doué pour déchiffrer TOUS types de recettes :
+- Écritures manuscrites difficiles, cursives, anciennes (carnets de grand-mère).
+- Ratures, taches de cuisine, écriture penchée ou petits caractères.
+- Faible luminosité, ombres, photos prises de biais ou de loin.
+- Recettes imprimées de livres, magazines ou captures d'écran.
 
 TÂCHE :
-Analyse attentivement cette image de recette de cuisine.
-Décode l'ensemble du texte, même si l'écriture est penchée, cursive ou ancienne.
-Structure la recette au format JSON strictement valide.
+Analyse très attentivement chaque détail de cette image. Déchiffre même les mots partiellement lisibles en t'aidant du contexte culinaire.
+Structure la recette extraite en respectant EXACTEMENT la structure JSON ci-dessous.
 
 RÈGLES IMPORTANTES :
-1. Si une quantité est sous forme de fraction (ex: 1/2), convertis-la ou garde "1/2".
-2. Sépare bien le nom de l'ingrédient, sa quantité et son unité (ex: { "name": "farine", "quantity": "250", "unit": "g" }).
-3. Si le temps de préparation ou de cuisson n'est pas explicite, estime-le logiquement selon la recette.
-4. Ordonne les étapes de préparation de manière claire, concise et facile à lire sur un écran de smartphone.
-5. Inclus le texte brut retranscrit fidèlement dans "raw_text".
-6. Réponds UNIQUEMENT avec un objet JSON respectant ce schéma sans texte additionnel ni markdown:
+1. Si le titre n'est pas explicite, devine le nom du plat à partir des ingrédients et étapes (ex: "Tarte aux pommes").
+2. Si une quantité est floue ou sous forme de fraction (ex: 1/2), convertis-la ou garde "1/2".
+3. Sépare bien chaque ingrédient: { "name": "nom", "quantity": "quantite", "unit": "unite" }. Si pas d'unité, laisse une chaîne vide "".
+4. Si le temps de préparation ou cuisson n'est pas écrit, estime-le logiquement selon le type de plat.
+5. Ordonne les étapes de préparation clairement pour être lues sur mobile.
+6. Dans "raw_text", inclus la retranscription la plus fidèle possible de ce que tu arrives à lire.
+7. Si l'image ne contient VRAIMENT aucun texte ou est totalement illisible, indique-le dans "confidence_notes".
 
+Format JSON attendu :
 {
   "title": "Nom de la recette",
-  "description": "Brève description ou résumé de la recette",
+  "description": "Courte description ou résumé",
   "servings": 4,
   "prep_time_minutes": 15,
   "cook_time_minutes": 30,
   "ingredients": [
-    { "name": "Beurre", "quantity": "100", "unit": "g" },
-    { "name": "Oeufs", "quantity": "3", "unit": "" }
+    { "name": "Farine", "quantity": "250", "unit": "g" }
   ],
   "steps": [
-    "Préchauffer le four à 180°C.",
-    "Faire fondre le beurre..."
+    "Préchauffer le four..."
   ],
-  "tags": ["Dessert", "Gâteau", "Traditionnel"],
-  "raw_text": "Retranscription exacte du texte de l'image",
-  "confidence_notes": "Note éventuelle sur les doutes de lecture (ou null si tout est clair)"
+  "tags": ["Plat", "Maison"],
+  "raw_text": "Texte brut déchiffré",
+  "confidence_notes": "Précisions sur la lisibilité ou les doutes"
 }`;
 
-    // 4. Appel du modèle Gemini
+    // 4. Appel du modèle Gemini avec format JSON garanti
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
@@ -91,33 +95,36 @@ RÈGLES IMPORTANTES :
           },
         },
       ],
+      config: {
+        responseMimeType: 'application/json',
+      },
     });
 
     const responseText = response.text || '';
 
-    // Nettoyer les balises markdown ```json éventuelles
-    const cleanedJson = responseText
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```$/i, '')
-      .trim();
-
+    // Nettoyage et parsing JSON
+    let parsedData: any = null;
     try {
-      const parsedData = JSON.parse(cleanedJson);
-      return NextResponse.json({ success: true, data: parsedData });
+      parsedData = JSON.parse(responseText);
     } catch {
-      return NextResponse.json(
-        {
-          error: "Erreur de formatage de la recette par l'IA",
-          raw: responseText,
-        },
-        { status: 500 }
-      );
+      const match = responseText.match(/\{[\s\S]*\}/);
+      if (match) {
+        parsedData = JSON.parse(match[0]);
+      } else {
+        throw new Error("L'IA n'a pas retourné de JSON valide");
+      }
     }
+
+    return NextResponse.json({
+      success: true,
+      data: parsedData,
+    });
   } catch (error: any) {
-    console.error('Erreur scan recipe:', error);
+    console.error('Erreur /api/scan-recipe:', error);
     return NextResponse.json(
-      { error: error.message || 'Erreur interne lors de la reconnaissance.' },
+      {
+        error: error.message || 'Erreur interne lors de la reconnaissance par IA.',
+      },
       { status: 500 }
     );
   }

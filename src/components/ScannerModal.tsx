@@ -112,7 +112,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
               onClose();
             }}
             disabled={isScanning}
-            className="p-2 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors"
+            className="p-2 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -121,8 +121,8 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-5">
           {error && (
-            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-              {error}
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium space-y-1">
+              <p className="leading-relaxed">{error}</p>
             </div>
           )}
 
@@ -132,7 +132,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
               type="button"
               onClick={() => setIsHandwritten(true)}
               disabled={isScanning}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
                 isHandwritten
                   ? 'bg-white text-stone-900 shadow-sm'
                   : 'text-stone-500 hover:text-stone-700'
@@ -145,7 +145,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
               type="button"
               onClick={() => setIsHandwritten(false)}
               disabled={isScanning}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
                 !isHandwritten
                   ? 'bg-white text-stone-900 shadow-sm'
                   : 'text-stone-500 hover:text-stone-700'
@@ -211,7 +211,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
                 {!isScanning && (
                   <button
                     onClick={handleReset}
-                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors"
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white hover:bg-black/80 transition-colors cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>

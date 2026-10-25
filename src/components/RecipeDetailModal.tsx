@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Heart, Clock, Users, Flame, Check, Trash2, Share2, ChefHat, Sparkles } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Heart, Clock, Users, Flame, Check, Trash2, Share2, ChefHat, Sparkles, Pencil } from 'lucide-react';
 import { Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
 
@@ -10,6 +10,7 @@ interface RecipeDetailModalProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onToggleFavorite: (id: string, isFav: boolean) => void;
+  onEdit: (recipe: Recipe) => void;
 }
 
 export default function RecipeDetailModal({
@@ -17,6 +18,7 @@ export default function RecipeDetailModal({
   onClose,
   onDelete,
   onToggleFavorite,
+  onEdit,
 }: RecipeDetailModalProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Record<number, boolean>>({});
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
@@ -24,6 +26,15 @@ export default function RecipeDetailModal({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const supabase = createClient();
+
+  // Synchroniser le nombre de personnes de base avec la recette sélectionnée
+  useEffect(() => {
+    if (recipe) {
+      setServingsMultiplier(recipe.servings || 4);
+      setCheckedIngredients({});
+      setCompletedSteps({});
+    }
+  }, [recipe?.id, recipe?.servings]);
 
   if (!recipe) return null;
 
@@ -95,14 +106,21 @@ export default function RecipeDetailModal({
           <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
             <button
               onClick={onClose}
-              className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/60 transition-colors"
+              className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/60 transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => onEdit(recipe)}
+                title="Modifier la recette"
+                className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/60 transition-colors cursor-pointer"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button
                 onClick={() => onToggleFavorite(recipe.id, !recipe.is_favorite)}
-                className={`w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center transition-colors ${
+                className={`w-10 h-10 rounded-full backdrop-blur-md flex items-center justify-center transition-colors cursor-pointer ${
                   recipe.is_favorite
                     ? 'bg-rose-500 text-white'
                     : 'bg-black/40 text-white hover:bg-black/60'
@@ -112,7 +130,7 @@ export default function RecipeDetailModal({
               </button>
               <button
                 onClick={handleShare}
-                className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/60 transition-colors"
+                className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white flex items-center justify-center hover:bg-black/60 transition-colors cursor-pointer"
               >
                 <Share2 className="w-4 h-4" />
               </button>
@@ -160,7 +178,7 @@ export default function RecipeDetailModal({
             <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-xl border border-stone-200 shadow-xs">
               <button
                 onClick={() => setServingsMultiplier(Math.max(1, servingsMultiplier - 1))}
-                className="w-6 h-6 rounded-lg bg-stone-100 font-bold text-stone-700 hover:bg-stone-200 flex items-center justify-center"
+                className="w-6 h-6 rounded-lg bg-stone-100 font-bold text-stone-700 hover:bg-stone-200 flex items-center justify-center cursor-pointer"
               >
                 -
               </button>
@@ -169,7 +187,7 @@ export default function RecipeDetailModal({
               </span>
               <button
                 onClick={() => setServingsMultiplier(servingsMultiplier + 1)}
-                className="w-6 h-6 rounded-lg bg-stone-100 font-bold text-stone-700 hover:bg-stone-200 flex items-center justify-center"
+                className="w-6 h-6 rounded-lg bg-stone-100 font-bold text-stone-700 hover:bg-stone-200 flex items-center justify-center cursor-pointer"
               >
                 +
               </button>
@@ -278,15 +296,22 @@ export default function RecipeDetailModal({
             </details>
           )}
 
-          {/* Supprimer la recette */}
-          <div className="pt-2">
+          {/* Actions du bas : Modifier & Supprimer */}
+          <div className="pt-2 flex items-center gap-3">
+            <button
+              onClick={() => onEdit(recipe)}
+              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Pencil className="w-4 h-4" />
+              <span>Modifier la recette</span>
+            </button>
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-1.5 py-3 px-4 rounded-2xl text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
-              <span>{isDeleting ? 'Suppression...' : 'Supprimer cette recette'}</span>
+              <span>{isDeleting ? '...' : 'Supprimer'}</span>
             </button>
           </div>
         </div>
