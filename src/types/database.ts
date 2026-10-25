@@ -14,6 +14,8 @@ export interface Recipe {
   cook_time_minutes?: number | null;
   source_type: 'scan_handwritten' | 'scan_printed' | 'manual';
   image_url?: string | null;
+  scan_image_urls?: string[] | null;
+  dish_photos?: string[] | null;
   ingredients: Ingredient[];
   steps: string[];
   tags: string[];

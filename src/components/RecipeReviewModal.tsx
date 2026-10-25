@@ -9,7 +9,7 @@ import confetti from 'canvas-confetti';
 interface RecipeReviewModalProps {
   isOpen: boolean;
   initialData: ExtractedRecipeData | null;
-  imageFile: File | null;
+  imageFiles?: File[] | null;
   onClose: () => void;
   onSaved: (recipe: Recipe) => void;
 }
@@ -17,7 +17,7 @@ interface RecipeReviewModalProps {
 export default function RecipeReviewModal({
   isOpen,
   initialData,
-  imageFile,
+  imageFiles,
   onClose,
   onSaved,
 }: RecipeReviewModalProps) {
@@ -131,26 +131,27 @@ export default function RecipeReviewModal({
 
       if (!user) throw new Error('Utilisateur non connecté');
 
-      let uploadedImageUrl: string | null = null;
+      let uploadedImageUrls: string[] = [];
 
-      // Upload de l'image si présente
-      if (imageFile) {
-        const fileExt = 'jpg';
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('recipe-photos')
-          .upload(fileName, imageFile, {
-            contentType: 'image/jpeg',
-            upsert: true,
-          });
-
-        if (!uploadError && uploadData) {
-          const { data: publicUrlData } = supabase.storage
+      // Upload des images (mono ou multi-pages)
+      if (imageFiles && imageFiles.length > 0) {
+        for (let i = 0; i < imageFiles.length; i++) {
+          const file = imageFiles[i];
+          const fileExt = 'jpg';
+          const fileName = `${user.id}/${Date.now()}_page_${i + 1}.${fileExt}`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
             .from('recipe-photos')
-            .getPublicUrl(fileName);
-          uploadedImageUrl = publicUrlData.publicUrl;
-        } else {
-          console.warn('Storage upload note:', uploadError?.message);
+            .upload(fileName, file, {
+              contentType: 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!uploadError && uploadData) {
+            const { data: publicUrlData } = supabase.storage
+              .from('recipe-photos')
+              .getPublicUrl(fileName);
+            uploadedImageUrls.push(publicUrlData.publicUrl);
+          }
         }
       }
 
@@ -160,27 +161,45 @@ export default function RecipeReviewModal({
         .map((t) => t.trim())
         .filter(Boolean);
 
-      // Insertion dans la table recipes
-      const { data, error: insertError } = await supabase
+      const mainImageUrl = uploadedImageUrls[0] || null;
+
+      // Base payload
+      const recipePayload: any = {
+        user_id: user.id,
+        title: title.trim(),
+        description: description.trim(),
+        servings: Number(servings) || 4,
+        prep_time_minutes: Number(prepTime) || 0,
+        cook_time_minutes: Number(cookTime) || 0,
+        ingredients: ingredients.filter((ing) => ing.name.trim() !== ''),
+        steps: steps.filter((step) => step.trim() !== ''),
+        tags: parsedTags,
+        image_url: mainImageUrl,
+        scan_image_urls: uploadedImageUrls,
+        dish_photos: [],
+        raw_ocr_text: initialData.raw_text || null,
+        source_type: 'scan_handwritten',
+      };
+
+      // Insertion dans la table recipes (avec fallback si colonnes récentes absentes)
+      let data: any = null;
+      let { data: inserted, error: insertError } = await supabase
         .from('recipes')
-        .insert({
-          user_id: user.id,
-          title: title.trim(),
-          description: description.trim(),
-          servings: Number(servings) || 4,
-          prep_time_minutes: Number(prepTime) || 0,
-          cook_time_minutes: Number(cookTime) || 0,
-          ingredients: ingredients.filter((ing) => ing.name.trim() !== ''),
-          steps: steps.filter((step) => step.trim() !== ''),
-          tags: parsedTags,
-          image_url: uploadedImageUrl,
-          raw_ocr_text: initialData.raw_text || null,
-          source_type: 'scan_handwritten',
-        })
+        .insert(recipePayload)
         .select()
         .single();
 
+      if (insertError && insertError.message?.includes('column')) {
+        // Fallback sans colonnes optionnelles
+        delete recipePayload.scan_image_urls;
+        delete recipePayload.dish_photos;
+        const res = await supabase.from('recipes').insert(recipePayload).select().single();
+        inserted = res.data;
+        insertError = res.error;
+      }
+
       if (insertError) throw insertError;
+      data = inserted;
 
       // Déclenche une petite pluie de confettis festifs
       confetti({

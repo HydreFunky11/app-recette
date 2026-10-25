@@ -35,7 +35,7 @@ export default function HomePage() {
   // Modales
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedData, setScannedData] = useState<ExtractedRecipeData | null>(null);
-  const [scannedImageFile, setScannedImageFile] = useState<File | null>(null);
+  const [scannedImageFiles, setScannedImageFiles] = useState<File[]>([]);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [recipeToEdit, setRecipeToEdit] = useState<Recipe | null>(null);
@@ -101,9 +101,9 @@ export default function HomePage() {
   };
 
   // 4. Callback du scanner
-  const handleScanComplete = (data: ExtractedRecipeData, imageFile: File | null) => {
+  const handleScanComplete = (data: ExtractedRecipeData, imageFiles: File[]) => {
     setScannedData(data);
-    setScannedImageFile(imageFile);
+    setScannedImageFiles(imageFiles);
     setIsScannerOpen(false);
     setIsReviewOpen(true);
   };
@@ -385,11 +385,11 @@ export default function HomePage() {
         <RecipeReviewModal
           isOpen={isReviewOpen}
           initialData={scannedData}
-          imageFile={scannedImageFile}
+          imageFiles={scannedImageFiles}
           onClose={() => {
             setIsReviewOpen(false);
             setScannedData(null);
-            setScannedImageFile(null);
+            setScannedImageFiles([]);
           }}
           onSaved={handleRecipeSaved}
         />
@@ -401,6 +401,7 @@ export default function HomePage() {
         onDelete={handleRecipeDeleted}
         onToggleFavorite={(id, isFav) => handleToggleFavorite(null, id, isFav)}
         onEdit={handleOpenEdit}
+        onUpdateRecipe={handleRecipeUpdated}
       />
 
       {recipeToEdit && (

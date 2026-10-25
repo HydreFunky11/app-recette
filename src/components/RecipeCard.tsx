@@ -11,6 +11,11 @@ interface RecipeCardProps {
 
 export default function RecipeCard({ recipe, onClick, onToggleFavorite }: RecipeCardProps) {
   const isHandwritten = recipe.source_type === 'scan_handwritten';
+  const coverImage = (recipe.dish_photos && recipe.dish_photos.length > 0)
+    ? recipe.dish_photos[0]
+    : recipe.image_url;
+  const hasDishPhoto = recipe.dish_photos && recipe.dish_photos.length > 0;
+  const isMultiPage = recipe.scan_image_urls && recipe.scan_image_urls.length > 1;
 
   return (
     <div
@@ -20,9 +25,9 @@ export default function RecipeCard({ recipe, onClick, onToggleFavorite }: Recipe
       <div>
         {/* Image ou Dégradé */}
         <div className="relative aspect-[16/10] rounded-2xl overflow-hidden bg-stone-100 mb-3">
-          {recipe.image_url ? (
+          {coverImage ? (
             <img
-              src={recipe.image_url}
+              src={coverImage}
               alt={recipe.title}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             />
@@ -32,9 +37,13 @@ export default function RecipeCard({ recipe, onClick, onToggleFavorite }: Recipe
             </div>
           )}
 
-          {/* Badge type de source */}
+          {/* Badge type de photo / source */}
           <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-sm text-[10px] font-bold text-stone-700 flex items-center gap-1 shadow-2xs">
-            {isHandwritten ? (
+            {hasDishPhoto ? (
+              <span>🍽️ Plat cuisiné</span>
+            ) : isMultiPage ? (
+              <span>📑 {recipe.scan_image_urls!.length} pages</span>
+            ) : isHandwritten ? (
               <>
                 <PenTool className="w-3 h-3 text-amber-600" />
                 <span>Manuscrit</span>

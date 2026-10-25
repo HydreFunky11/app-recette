@@ -28,42 +28,60 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Récupération de l'image
+    // 2. Récupération des images (support mono ou multi-pages)
     const formData = await req.formData();
-    const file = formData.get('image') as File | null;
-    const isHandwritten = formData.get('isHandwritten') === 'true';
+    let files: File[] = [];
 
-    if (!file) {
+    const allImages = formData.getAll('images') as File[];
+    const singleImage = formData.get('image') as File | null;
+
+    if (allImages && allImages.length > 0) {
+      files = allImages.filter((f) => f && f.size > 0);
+    } else if (singleImage && singleImage.size > 0) {
+      files = [singleImage];
+    }
+
+    if (files.length === 0) {
       return NextResponse.json(
         { error: 'Aucun fichier image fourni.' },
         { status: 400 }
       );
     }
 
-    // Convertir en base64
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString('base64');
-    const mimeType = file.type || 'image/jpeg';
+    // Convertir toutes les images en base64 pour Gemini
+    const inlineDataParts = await Promise.all(
+      files.map(async (file) => {
+        const arrayBuffer = await file.arrayBuffer();
+        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+        const mimeType = file.type || 'image/jpeg';
+        return {
+          inlineData: {
+            mimeType,
+            data: base64Data,
+          },
+        };
+      })
+    );
 
-    // 3. Prompt spécialisé pour recettes manuscrites ou imprimées
+    // 3. Prompt multimodal optimisé pour mono & multi-pages (manuscrit ou imprimé)
     const prompt = `Tu es un expert culinaire et spécialiste de la reconnaissance de texte (OCR), particulièrement doué pour déchiffrer TOUS types de recettes :
 - Écritures manuscrites difficiles, cursives, anciennes (carnets de grand-mère).
-- Ratures, taches de cuisine, écriture penchée ou petits caractères.
+- Recettes imprimées de livres, magazines ou ordinateurs.
 - Faible luminosité, ombres, photos prises de biais ou de loin.
-- Recettes imprimées de livres, magazines ou captures d'écran.
+${files.length > 1 ? `- MULTI-PAGES : Tu as reçu ${files.length} images/pages pour cette même recette (ex: page 1 avec les ingrédients, page 2 avec les étapes). Synthétise l'ensemble des pages en une seule recette unifiée et complète sans oublier aucun ingrédient ni étape.` : ''}
 
 TÂCHE :
-Analyse très attentivement chaque détail de cette image. Déchiffre même les mots partiellement lisibles en t'aidant du contexte culinaire.
+Analyse très attentivement chaque détail de l'image (ou des images). Déchiffre même les mots partiellement lisibles en t'aidant du contexte culinaire.
 Structure la recette extraite en respectant EXACTEMENT la structure JSON ci-dessous.
 
 RÈGLES IMPORTANTES :
-1. Si le titre n'est pas explicite, devine le nom du plat à partir des ingrédients et étapes (ex: "Tarte aux pommes").
+1. Si le titre n'est pas explicite, déduis le nom du plat à partir des ingrédients et étapes (ex: "Tarte aux pommes").
 2. Si une quantité est floue ou sous forme de fraction (ex: 1/2), convertis-la ou garde "1/2".
 3. Sépare bien chaque ingrédient: { "name": "nom", "quantity": "quantite", "unit": "unite" }. Si pas d'unité, laisse une chaîne vide "".
 4. Si le temps de préparation ou cuisson n'est pas écrit, estime-le logiquement selon le type de plat.
 5. Ordonne les étapes de préparation clairement pour être lues sur mobile.
 6. Dans "raw_text", inclus la retranscription la plus fidèle possible de ce que tu arrives à lire.
-7. Si l'image ne contient VRAIMENT aucun texte ou est totalement illisible, indique-le dans "confidence_notes".
+7. Si l'image ne contient aucun texte culinaire, indique-le dans "confidence_notes".
 
 Format JSON attendu :
 {
@@ -83,17 +101,12 @@ Format JSON attendu :
   "confidence_notes": "Précisions sur la lisibilité ou les doutes"
 }`;
 
-    // 4. Appel du modèle Gemini avec format JSON garanti
+    // 4. Appel du modèle Gemini avec toutes les pages
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
         { text: prompt },
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data,
-          },
-        },
+        ...inlineDataParts,
       ],
       config: {
         responseMimeType: 'application/json',

@@ -1,9 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Heart, Clock, Users, Flame, Check, Trash2, Share2, ChefHat, Sparkles, Pencil } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import {
+  X,
+  Heart,
+  Clock,
+  Flame,
+  Check,
+  Trash2,
+  Share2,
+  ChefHat,
+  Sparkles,
+  Pencil,
+  Camera,
+  Image as ImageIcon,
+  Loader2,
+  Layers,
+} from 'lucide-react';
 import { Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/imageCompression';
+import confetti from 'canvas-confetti';
 
 interface RecipeDetailModalProps {
   recipe: Recipe | null;
@@ -11,6 +28,7 @@ interface RecipeDetailModalProps {
   onDelete: (id: string) => void;
   onToggleFavorite: (id: string, isFav: boolean) => void;
   onEdit: (recipe: Recipe) => void;
+  onUpdateRecipe?: (updated: Recipe) => void;
 }
 
 export default function RecipeDetailModal({
@@ -19,20 +37,27 @@ export default function RecipeDetailModal({
   onDelete,
   onToggleFavorite,
   onEdit,
+  onUpdateRecipe,
 }: RecipeDetailModalProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Record<number, boolean>>({});
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
   const [servingsMultiplier, setServingsMultiplier] = useState<number>(recipe?.servings || 4);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUploadingDishPhoto, setIsUploadingDishPhoto] = useState(false);
+  const [activeHeroPhoto, setActiveHeroPhoto] = useState<string | null>(null);
 
+  const addDishPhotoInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
-  // Synchroniser le nombre de personnes de base avec la recette sélectionnée
+  // Synchroniser le nombre de personnes de base et la photo active
   useEffect(() => {
     if (recipe) {
       setServingsMultiplier(recipe.servings || 4);
       setCheckedIngredients({});
       setCompletedSteps({});
+      // Photo par défaut : premier plat cuisiné si présent, sinon le scan
+      const firstDish = recipe.dish_photos && recipe.dish_photos.length > 0 ? recipe.dish_photos[0] : null;
+      setActiveHeroPhoto(firstDish || recipe.image_url || null);
     }
   }, [recipe?.id, recipe?.servings]);
 
@@ -47,6 +72,88 @@ export default function RecipeDetailModal({
 
   const toggleStep = (idx: number) => {
     setCompletedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  // Ajout d'une photo du plat fini
+  const handleAddDishPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingDishPhoto(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) throw new Error('Utilisateur non connecté.');
+
+      // 1. Compression
+      let compressedFile = file;
+      try {
+        compressedFile = await compressImage(file);
+      } catch {
+        // conserver original
+      }
+
+      // 2. Upload dans Supabase Storage
+      const fileExt = 'jpg';
+      const fileName = `${user.id}/${recipe.id}_dish_${Date.now()}.${fileExt}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('recipe-photos')
+        .upload(fileName, compressedFile, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError || !uploadData) {
+        throw new Error(uploadError?.message || "Échec de l'upload.");
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('recipe-photos')
+        .getPublicUrl(fileName);
+
+      const newPhotoUrl = publicUrlData.publicUrl;
+      const updatedPhotos = [...(recipe.dish_photos || []), newPhotoUrl];
+
+      // 3. Mise à jour de la table
+      const { data: updatedRecipe, error: updateError } = await supabase
+        .from('recipes')
+        .update({
+          dish_photos: updatedPhotos,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', recipe.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        if (updateError.message.includes('column')) {
+          alert(
+            "Note : La colonne 'dish_photos' n'a pas encore été créée dans votre SQL Supabase. Veuillez exécuter la ligne dans SQL Editor."
+          );
+        } else {
+          throw updateError;
+        }
+      } else if (updatedRecipe) {
+        if (onUpdateRecipe) {
+          onUpdateRecipe(updatedRecipe as Recipe);
+        }
+        setActiveHeroPhoto(newPhotoUrl);
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.6 },
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Erreur lors de l\'ajout de la photo: ' + err.message);
+    } finally {
+      setIsUploadingDishPhoto(false);
+      if (addDishPhotoInputRef.current) addDishPhotoInputRef.current.value = '';
+    }
   };
 
   const handleDelete = async () => {
@@ -74,7 +181,7 @@ export default function RecipeDetailModal({
           url: window.location.href,
         });
       } catch {
-        // Ignorer annulation
+        // Ignorer
       }
     } else {
       navigator.clipboard.writeText(window.location.href);
@@ -86,12 +193,12 @@ export default function RecipeDetailModal({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full sm:max-w-xl rounded-t-[2.5rem] sm:rounded-3xl max-h-[94dvh] flex flex-col overflow-hidden shadow-2xl border border-stone-200">
         {/* Header Hero Image or Graphic */}
-        <div className="relative h-48 sm:h-56 bg-stone-900 shrink-0 overflow-hidden">
-          {recipe.image_url ? (
+        <div className="relative h-52 sm:h-60 bg-stone-900 shrink-0 overflow-hidden">
+          {activeHeroPhoto ? (
             <img
-              src={recipe.image_url}
+              src={activeHeroPhoto}
               alt={recipe.title}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover transition-all duration-300"
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-tr from-amber-600 via-amber-500 to-orange-400 text-white p-4 text-center">
@@ -159,6 +266,84 @@ export default function RecipeDetailModal({
                 {recipe.description}
               </p>
             )}
+          </div>
+
+          {/* SECTION : Photos du plat cuisiné (Nouveau !) */}
+          <div className="p-4 rounded-3xl bg-amber-50/50 border border-amber-200/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-amber-600" />
+                <span>Photos de votre plat ({recipe.dish_photos?.length || 0})</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => addDishPhotoInputRef.current?.click()}
+                disabled={isUploadingDishPhoto}
+                className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-amber-300 shadow-2xs hover:bg-amber-50 transition-all"
+              >
+                {isUploadingDishPhoto ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Upload...</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>+ Ajouter mon plat</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Galerie horizontale de photos */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              {/* Scan original */}
+              {recipe.image_url && (
+                <button
+                  type="button"
+                  onClick={() => setActiveHeroPhoto(recipe.image_url!)}
+                  className={`relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                    activeHeroPhoto === recipe.image_url ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <img src={recipe.image_url} alt="Scan" className="w-full h-full object-cover" />
+                  <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-white text-center font-bold">
+                    Scan
+                  </span>
+                </button>
+              )}
+
+              {/* Photos du plat fini */}
+              {recipe.dish_photos?.map((photoUrl, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setActiveHeroPhoto(photoUrl)}
+                  className={`relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                    activeHeroPhoto === photoUrl ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
+                  }`}
+                >
+                  <img src={photoUrl} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
+                  <span className="absolute bottom-0 inset-x-0 bg-amber-600/90 text-[8px] text-white text-center font-bold">
+                    Plat #{idx + 1}
+                  </span>
+                </button>
+              ))}
+
+              {(!recipe.dish_photos || recipe.dish_photos.length === 0) && (
+                <div className="text-[11px] text-stone-500 italic py-1">
+                  Vous avez cuisiné ce plat ? Ajoutez votre photo souvenir ci-dessus !
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={addDishPhotoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAddDishPhoto}
+              className="hidden"
+            />
           </div>
 
           {/* Stats & Servings Adjuster */}
@@ -282,6 +467,31 @@ export default function RecipeDetailModal({
               })}
             </div>
           </div>
+
+          {/* Scans multi-pages (si présents) */}
+          {recipe.scan_image_urls && recipe.scan_image_urls.length > 1 && (
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-stone-400" />
+                <span>Pages originales scannées ({recipe.scan_image_urls.length})</span>
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {recipe.scan_image_urls.map((scanUrl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveHeroPhoto(scanUrl)}
+                    className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-stone-200 shadow-2xs hover:border-amber-400 transition-all cursor-pointer"
+                  >
+                    <img src={scanUrl} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                    <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-[10px] text-white font-bold">
+                      Page {idx + 1}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Transcription brute d'origine si disponible */}
           {recipe.raw_ocr_text && (

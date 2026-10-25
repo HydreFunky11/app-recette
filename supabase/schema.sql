@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.recipes (
     cook_time_minutes INTEGER,
     source_type TEXT DEFAULT 'scan_handwritten', -- 'scan_handwritten', 'scan_printed', 'manual'
     image_url TEXT,
+    scan_image_urls TEXT[] DEFAULT '{}'::text[],
+    dish_photos TEXT[] DEFAULT '{}'::text[],
     ingredients JSONB NOT NULL DEFAULT '[]'::jsonb, 
     -- Ex: [{"name": "Farine", "quantity": "250", "unit": "g"}]
     steps JSONB NOT NULL DEFAULT '[]'::jsonb, 
@@ -75,3 +77,8 @@ CREATE POLICY "Users can delete their recipe images"
         bucket_id = 'recipe-photos' 
         AND auth.uid()::text = (storage.foldername(name))[1]
     );
+
+-- Migration pour ajouter les colonnes photos supplémentaires si la table existe déjà
+ALTER TABLE public.recipes ADD COLUMN IF NOT EXISTS scan_image_urls TEXT[] DEFAULT '{}'::text[];
+ALTER TABLE public.recipes ADD COLUMN IF NOT EXISTS dish_photos TEXT[] DEFAULT '{}'::text[];
+
