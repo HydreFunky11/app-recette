@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@/lib/supabase/server';
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || '',
-});
-
 export async function POST(req: NextRequest) {
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'Clé GEMINI_API_KEY non configurée sur le serveur.' },
+        { status: 500 }
+      );
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
     // 1. Authentification de l'utilisateur
     const supabase = await createClient();
     const {
@@ -25,7 +31,6 @@ export async function POST(req: NextRequest) {
     // 2. Récupération de l'image
     const formData = await req.formData();
     const file = formData.get('image') as File | null;
-    const isHandwritten = formData.get('isHandwritten') === 'true';
 
     if (!file) {
       return NextResponse.json(
@@ -89,7 +94,7 @@ RÈGLES IMPORTANTES :
     });
 
     const responseText = response.text || '';
-    
+
     // Nettoyer les balises markdown ```json éventuelles
     const cleanedJson = responseText
       .replace(/^```json\s*/i, '')
