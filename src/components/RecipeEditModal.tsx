@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles, Pencil } from 'lucide-react';
+import { X, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles, Pencil, Camera, Layers } from 'lucide-react';
 import { Ingredient, Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
 
@@ -26,6 +26,9 @@ export default function RecipeEditModal({
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [steps, setSteps] = useState<string[]>([]);
   const [tags, setTags] = useState<string>('');
+  const [dishPhotos, setDishPhotos] = useState<string[]>([]);
+  const [scanImageUrls, setScanImageUrls] = useState<string[]>([]);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +44,9 @@ export default function RecipeEditModal({
       setIngredients(recipe.ingredients || []);
       setSteps(recipe.steps || []);
       setTags(recipe.tags?.join(', ') || '');
+      setDishPhotos(recipe.dish_photos || []);
+      setScanImageUrls(recipe.scan_image_urls || []);
+      setImageUrl(recipe.image_url || null);
       setError(null);
     }
   }, [recipe]);
@@ -77,6 +83,20 @@ export default function RecipeEditModal({
     setSteps(steps.filter((_, i) => i !== index));
   };
 
+  // Suppression d'une photo du plat
+  const handleRemoveDishPhoto = (indexToDelete: number) => {
+    setDishPhotos((prev) => prev.filter((_, i) => i !== indexToDelete));
+  };
+
+  // Suppression d'une photo de scan
+  const handleRemoveScanPhoto = (urlToDelete: string) => {
+    const remaining = scanImageUrls.filter((u) => u !== urlToDelete);
+    setScanImageUrls(remaining);
+    if (imageUrl === urlToDelete) {
+      setImageUrl(remaining[0] || null);
+    }
+  };
+
   // Sauvegarde des modifications
   const handleSave = async () => {
     if (!title.trim()) {
@@ -93,22 +113,35 @@ export default function RecipeEditModal({
         .map((t) => t.trim())
         .filter(Boolean);
 
-      const { data, error: updateError } = await supabase
+      const updatePayload: any = {
+        title: title.trim(),
+        description: description.trim(),
+        servings: Number(servings) || 4,
+        prep_time_minutes: Number(prepTime) || 0,
+        cook_time_minutes: Number(cookTime) || 0,
+        ingredients: ingredients.filter((ing) => ing.name.trim() !== ''),
+        steps: steps.filter((step) => step.trim() !== ''),
+        tags: parsedTags,
+        dish_photos: dishPhotos,
+        scan_image_urls: scanImageUrls,
+        image_url: imageUrl || scanImageUrls[0] || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      let { data, error: updateError } = await supabase
         .from('recipes')
-        .update({
-          title: title.trim(),
-          description: description.trim(),
-          servings: Number(servings) || 4,
-          prep_time_minutes: Number(prepTime) || 0,
-          cook_time_minutes: Number(cookTime) || 0,
-          ingredients: ingredients.filter((ing) => ing.name.trim() !== ''),
-          steps: steps.filter((step) => step.trim() !== ''),
-          tags: parsedTags,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', recipe.id)
         .select()
         .single();
+
+      if (updateError && updateError.message?.includes('column')) {
+        delete updatePayload.dish_photos;
+        delete updatePayload.scan_image_urls;
+        const res = await supabase.from('recipes').update(updatePayload).eq('id', recipe.id).select().single();
+        data = res.data;
+        updateError = res.error;
+      }
 
       if (updateError) throw updateError;
 
@@ -122,6 +155,8 @@ export default function RecipeEditModal({
     }
   };
 
+  const hasAnyPhotos = (dishPhotos && dishPhotos.length > 0) || (scanImageUrls && scanImageUrls.length > 0) || !!imageUrl;
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full sm:max-w-xl rounded-t-[2.5rem] sm:rounded-3xl max-h-[92dvh] flex flex-col overflow-hidden shadow-2xl border border-stone-200">
@@ -134,7 +169,7 @@ export default function RecipeEditModal({
           <button
             onClick={onClose}
             disabled={isSaving}
-            className="p-2 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-200/50 transition-colors"
+            className="p-2 text-stone-400 hover:text-stone-600 rounded-full hover:bg-stone-200/50 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -218,6 +253,59 @@ export default function RecipeEditModal({
               />
             </div>
           </div>
+
+          {/* Gestion des photos (Suppression de photos) */}
+          {hasAnyPhotos && (
+            <div className="space-y-3 p-4 rounded-3xl bg-stone-50 border border-stone-200">
+              <label className="text-xs font-bold text-stone-700 uppercase tracking-wider block">
+                Gestion des photos associées
+              </label>
+
+              {/* Photos du plat */}
+              {dishPhotos.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-amber-800">Photos du plat :</span>
+                  <div className="flex flex-wrap gap-2">
+                    {dishPhotos.map((url, idx) => (
+                      <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
+                        <img src={url} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDishPhoto(idx)}
+                          title="Supprimer cette photo"
+                          className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Scans */}
+              {(scanImageUrls.length > 0 || imageUrl) && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-stone-600">Photos des scans de recette :</span>
+                  <div className="flex flex-wrap gap-2">
+                    {(scanImageUrls.length > 0 ? scanImageUrls : (imageUrl ? [imageUrl] : [])).map((url, idx) => (
+                      <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
+                        <img src={url} alt={`Scan ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveScanPhoto(url)}
+                          title="Supprimer cette page de scan"
+                          className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Ingrédients */}
           <div className="space-y-3">

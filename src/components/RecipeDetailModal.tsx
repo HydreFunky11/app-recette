@@ -13,7 +13,6 @@ import {
   Sparkles,
   Pencil,
   Camera,
-  Image as ImageIcon,
   Loader2,
   Layers,
 } from 'lucide-react';
@@ -55,7 +54,6 @@ export default function RecipeDetailModal({
       setServingsMultiplier(recipe.servings || 4);
       setCheckedIngredients({});
       setCompletedSteps({});
-      // Photo par défaut : premier plat cuisiné si présent, sinon le scan
       const firstDish = recipe.dish_photos && recipe.dish_photos.length > 0 ? recipe.dish_photos[0] : null;
       setActiveHeroPhoto(firstDish || recipe.image_url || null);
     }
@@ -74,7 +72,7 @@ export default function RecipeDetailModal({
     setCompletedSteps((prev) => ({ ...prev, [idx]: !prev[idx] }));
   };
 
-  // Ajout d'une photo du plat fini
+  // 1. Ajout d'une photo du plat fini
   const handleAddDishPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -88,7 +86,6 @@ export default function RecipeDetailModal({
 
       if (!user) throw new Error('Utilisateur non connecté.');
 
-      // 1. Compression
       let compressedFile = file;
       try {
         compressedFile = await compressImage(file);
@@ -96,7 +93,6 @@ export default function RecipeDetailModal({
         // conserver original
       }
 
-      // 2. Upload dans Supabase Storage
       const fileExt = 'jpg';
       const fileName = `${user.id}/${recipe.id}_dish_${Date.now()}.${fileExt}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -117,7 +113,6 @@ export default function RecipeDetailModal({
       const newPhotoUrl = publicUrlData.publicUrl;
       const updatedPhotos = [...(recipe.dish_photos || []), newPhotoUrl];
 
-      // 3. Mise à jour de la table
       const { data: updatedRecipe, error: updateError } = await supabase
         .from('recipes')
         .update({
@@ -128,25 +123,17 @@ export default function RecipeDetailModal({
         .select()
         .single();
 
-      if (updateError) {
-        if (updateError.message.includes('column')) {
-          alert(
-            "Note : La colonne 'dish_photos' n'a pas encore été créée dans votre SQL Supabase. Veuillez exécuter la ligne dans SQL Editor."
-          );
-        } else {
-          throw updateError;
-        }
-      } else if (updatedRecipe) {
-        if (onUpdateRecipe) {
-          onUpdateRecipe(updatedRecipe as Recipe);
-        }
-        setActiveHeroPhoto(newPhotoUrl);
-        confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.6 },
-        });
+      if (updateError) throw updateError;
+
+      if (updatedRecipe && onUpdateRecipe) {
+        onUpdateRecipe(updatedRecipe as Recipe);
       }
+      setActiveHeroPhoto(newPhotoUrl);
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+      });
     } catch (err: any) {
       console.error(err);
       alert('Erreur lors de l\'ajout de la photo: ' + err.message);
@@ -156,8 +143,81 @@ export default function RecipeDetailModal({
     }
   };
 
+  // 2. Suppression d'une photo du plat cuisiné
+  const handleDeleteDishPhoto = async (indexToDelete: number) => {
+    if (!confirm('Voulez-vous supprimer cette photo de votre plat ?')) return;
+
+    try {
+      const updatedPhotos = (recipe.dish_photos || []).filter((_, i) => i !== indexToDelete);
+      const { data: updatedRecipe, error } = await supabase
+        .from('recipes')
+        .update({
+          dish_photos: updatedPhotos,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', recipe.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (updatedRecipe && onUpdateRecipe) {
+        onUpdateRecipe(updatedRecipe as Recipe);
+      }
+
+      // Si la photo supprimée était celle affichée en haut, basculer vers une autre
+      const nextPhoto = updatedPhotos.length > 0 ? updatedPhotos[0] : (recipe.image_url || null);
+      setActiveHeroPhoto(nextPhoto);
+    } catch (err: any) {
+      alert('Erreur lors de la suppression de la photo: ' + err.message);
+    }
+  };
+
+  // 3. Suppression d'une photo de scan original
+  const handleDeleteScanPhoto = async (urlToDelete: string) => {
+    if (!confirm('Voulez-vous supprimer cette page de scan ?')) return;
+
+    try {
+      const updatedScans = (recipe.scan_image_urls || []).filter((u) => u !== urlToDelete);
+      const newMainImage = recipe.image_url === urlToDelete ? (updatedScans[0] || null) : recipe.image_url;
+
+      const { data: updatedRecipe, error } = await supabase
+        .from('recipes')
+        .update({
+          scan_image_urls: updatedScans,
+          image_url: newMainImage,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', recipe.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (updatedRecipe && onUpdateRecipe) {
+        onUpdateRecipe(updatedRecipe as Recipe);
+      }
+
+      if (activeHeroPhoto === urlToDelete) {
+        const nextPhoto = recipe.dish_photos?.[0] || newMainImage || null;
+        setActiveHeroPhoto(nextPhoto);
+      }
+    } catch (err: any) {
+      alert('Erreur: ' + err.message);
+    }
+  };
+
+  // Suppression de la photo courante active
+  const handleDeleteCurrentPhoto = () => {
+    if (!activeHeroPhoto) return;
+    const dishIndex = recipe.dish_photos?.indexOf(activeHeroPhoto);
+    if (dishIndex !== undefined && dishIndex >= 0) {
+      handleDeleteDishPhoto(dishIndex);
+    } else if (recipe.image_url === activeHeroPhoto || recipe.scan_image_urls?.includes(activeHeroPhoto)) {
+      handleDeleteScanPhoto(activeHeroPhoto);
+    }
+  };
+
   const handleDelete = async () => {
-    if (!confirm('Voulez-vous vraiment supprimer cette recette ?')) return;
+    if (!confirm('Voulez-vous vraiment supprimer cette recette entière ?')) return;
 
     setIsDeleting(true);
     try {
@@ -218,6 +278,17 @@ export default function RecipeDetailModal({
               <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-2">
+              {/* Bouton supprimer la photo actuellement affichée */}
+              {activeHeroPhoto && (
+                <button
+                  type="button"
+                  onClick={handleDeleteCurrentPhoto}
+                  title="Supprimer cette photo"
+                  className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-rose-600 transition-colors flex items-center justify-center cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
               <button
                 onClick={() => onEdit(recipe)}
                 title="Modifier la recette"
@@ -268,7 +339,7 @@ export default function RecipeDetailModal({
             )}
           </div>
 
-          {/* SECTION : Photos du plat cuisiné (Nouveau !) */}
+          {/* SECTION : Photos du plat cuisiné */}
           <div className="p-4 rounded-3xl bg-amber-50/50 border border-amber-200/60 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -295,44 +366,70 @@ export default function RecipeDetailModal({
               </button>
             </div>
 
-            {/* Galerie horizontale de photos */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-              {/* Scan original */}
+            {/* Galerie horizontale de photos avec bouton supprimer individuel */}
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-2 pt-1 no-scrollbar">
+              {/* Scan original (si présent) */}
               {recipe.image_url && (
-                <button
-                  type="button"
-                  onClick={() => setActiveHeroPhoto(recipe.image_url!)}
-                  className={`relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
-                    activeHeroPhoto === recipe.image_url ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <img src={recipe.image_url} alt="Scan" className="w-full h-full object-cover" />
-                  <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-white text-center font-bold">
-                    Scan
-                  </span>
-                </button>
+                <div className="relative group shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveHeroPhoto(recipe.image_url!)}
+                    className={`relative w-16 h-16 rounded-2xl overflow-hidden block border-2 transition-all cursor-pointer ${
+                      activeHeroPhoto === recipe.image_url ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={recipe.image_url} alt="Scan" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-white text-center font-bold">
+                      Scan
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteScanPhoto(recipe.image_url!);
+                    }}
+                    title="Supprimer cette photo de scan"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md hover:bg-rose-700 transition-colors z-10 cursor-pointer"
+                  >
+                    <X className="w-3 h-3 stroke-[3]" />
+                  </button>
+                </div>
               )}
 
               {/* Photos du plat fini */}
               {recipe.dish_photos?.map((photoUrl, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setActiveHeroPhoto(photoUrl)}
-                  className={`relative w-16 h-16 rounded-2xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
-                    activeHeroPhoto === photoUrl ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <img src={photoUrl} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
-                  <span className="absolute bottom-0 inset-x-0 bg-amber-600/90 text-[8px] text-white text-center font-bold">
-                    Plat #{idx + 1}
-                  </span>
-                </button>
+                <div key={idx} className="relative group shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveHeroPhoto(photoUrl)}
+                    className={`relative w-16 h-16 rounded-2xl overflow-hidden block border-2 transition-all cursor-pointer ${
+                      activeHeroPhoto === photoUrl ? 'border-amber-500 ring-2 ring-amber-400/40 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={photoUrl} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 inset-x-0 bg-amber-600/90 text-[8px] text-white text-center font-bold">
+                      Plat #{idx + 1}
+                    </span>
+                  </button>
+                  {/* Bouton supprimer la photo du plat */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteDishPhoto(idx);
+                    }}
+                    title="Supprimer cette photo de plat"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md hover:bg-rose-700 transition-colors z-10 cursor-pointer"
+                  >
+                    <X className="w-3 h-3 stroke-[3]" />
+                  </button>
+                </div>
               ))}
 
-              {(!recipe.dish_photos || recipe.dish_photos.length === 0) && (
+              {(!recipe.dish_photos || recipe.dish_photos.length === 0) && !recipe.image_url && (
                 <div className="text-[11px] text-stone-500 italic py-1">
-                  Vous avez cuisiné ce plat ? Ajoutez votre photo souvenir ci-dessus !
+                  Aucune photo pour l&apos;instant. Cliquez ci-dessus pour ajouter votre première photo !
                 </div>
               )}
             </div>
@@ -477,17 +574,30 @@ export default function RecipeDetailModal({
               </span>
               <div className="grid grid-cols-2 gap-2">
                 {recipe.scan_image_urls.map((scanUrl, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setActiveHeroPhoto(scanUrl)}
-                    className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-stone-200 shadow-2xs hover:border-amber-400 transition-all cursor-pointer"
-                  >
-                    <img src={scanUrl} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
-                    <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-[10px] text-white font-bold">
-                      Page {idx + 1}
-                    </span>
-                  </button>
+                  <div key={idx} className="relative aspect-[3/4] rounded-2xl overflow-hidden border border-stone-200 shadow-2xs group">
+                    <button
+                      type="button"
+                      onClick={() => setActiveHeroPhoto(scanUrl)}
+                      className="w-full h-full block cursor-pointer"
+                    >
+                      <img src={scanUrl} alt={`Page ${idx + 1}`} className="w-full h-full object-cover" />
+                      <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-[10px] text-white font-bold">
+                        Page {idx + 1}
+                      </span>
+                    </button>
+                    {/* Bouton supprimer la page de scan */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteScanPhoto(scanUrl);
+                      }}
+                      title="Supprimer cette page"
+                      className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-rose-600 transition-colors z-10 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
