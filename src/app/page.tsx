@@ -30,7 +30,7 @@ export default function HomePage() {
 
   // Filtres
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'favorites' | 'handwritten' | 'printed'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'favorites'>('all');
 
   // Modales
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -149,19 +149,37 @@ export default function HomePage() {
     setRecipeToEdit(null);
   };
 
-  // Filtrage
+  // Fonction de normalisation (minuscule, sans accents)
+  const normalize = (text: string) =>
+    text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  // Filtrage intelligent (par titre, ingrédient(s), ou étiquette)
   const filteredRecipes = recipes.filter((recipe) => {
-    const matchesSearch =
-      recipe.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      recipe.ingredients.some((i) => i.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      recipe.tags?.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (activeFilter === 'favorites' && !recipe.is_favorite) {
+      return false;
+    }
 
-    if (!matchesSearch) return false;
+    if (!searchQuery.trim()) return true;
 
-    if (activeFilter === 'favorites') return recipe.is_favorite;
-    if (activeFilter === 'handwritten') return recipe.source_type === 'scan_handwritten';
-    if (activeFilter === 'printed') return recipe.source_type === 'scan_printed';
-    return true;
+    // Découper la recherche en mots-clés (ex: "farine chocolat" ou "pomme, beurre")
+    const terms = normalize(searchQuery).split(/[ ,+]+/).filter(Boolean);
+
+    // Tous les termes tapés doivent se retrouver dans la recette (titre, ingrédient ou tag)
+    return terms.every((term) => {
+      const inTitle = normalize(recipe.title).includes(term);
+      const inDesc = recipe.description ? normalize(recipe.description).includes(term) : false;
+      const inTags = recipe.tags?.some((t) => normalize(t).includes(term));
+      const inIngredients = recipe.ingredients?.some((ing) => {
+        const name = typeof ing === 'string' ? ing : ing.name;
+        return normalize(name || '').includes(term);
+      });
+
+      return inTitle || inDesc || inTags || inIngredients;
+    });
   });
 
   if (loadingAuth) {
@@ -256,23 +274,31 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Barre de Recherche */}
+        {/* Barre de Recherche (Recherche par titre, ingrédient ou tag) */}
         <div className="mt-3 relative">
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Rechercher une recette, un ingrédient..."
+            placeholder="Rechercher une recette ou des ingrédients (ex: farine, pomme)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 rounded-2xl bg-stone-100 border border-stone-200/80 text-xs text-stone-900 placeholder:text-stone-400 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all"
+            className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-stone-100 border border-stone-200/80 text-xs text-stone-900 placeholder:text-stone-400 outline-none focus:bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs cursor-pointer p-0.5"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
-        {/* Filtres Tags */}
-        <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
+        {/* Filtres Onglets */}
+        <div className="flex items-center gap-2 mt-3 pb-1">
           <button
             onClick={() => setActiveFilter('all')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all cursor-pointer ${
               activeFilter === 'all'
                 ? 'bg-amber-500 text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
@@ -282,36 +308,14 @@ export default function HomePage() {
           </button>
           <button
             onClick={() => setActiveFilter('favorites')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
               activeFilter === 'favorites'
                 ? 'bg-rose-500 text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
             <Heart className="w-3.5 h-3.5" />
-            Favoris
-          </button>
-          <button
-            onClick={() => setActiveFilter('handwritten')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all ${
-              activeFilter === 'handwritten'
-                ? 'bg-amber-800 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
-          >
-            <PenTool className="w-3.5 h-3.5" />
-            Manuscrits
-          </button>
-          <button
-            onClick={() => setActiveFilter('printed')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all ${
-              activeFilter === 'printed'
-                ? 'bg-orange-700 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            Imprimés
+            Favoris ({recipes.filter((r) => r.is_favorite).length})
           </button>
         </div>
       </header>

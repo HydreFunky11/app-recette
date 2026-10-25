@@ -37,22 +37,14 @@ export default function RecipeCard({ recipe, onClick, onToggleFavorite }: Recipe
             </div>
           )}
 
-          {/* Badge type de photo / source */}
+          {/* Badge type de photo / tag */}
           <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-sm text-[10px] font-bold text-stone-700 flex items-center gap-1 shadow-2xs">
             {hasDishPhoto ? (
               <span>🍽️ Plat cuisiné</span>
             ) : isMultiPage ? (
               <span>📑 {recipe.scan_image_urls!.length} pages</span>
-            ) : isHandwritten ? (
-              <>
-                <PenTool className="w-3 h-3 text-amber-600" />
-                <span>Manuscrit</span>
-              </>
             ) : (
-              <>
-                <BookOpen className="w-3 h-3 text-orange-600" />
-                <span>Livre</span>
-              </>
+              <span>{recipe.tags?.[0] || 'Recette'}</span>
             )}
           </div>
 
