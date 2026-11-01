@@ -76,8 +76,8 @@ export default function RecipeDetailModal({
 
   // 1. Ajout d'une photo du plat fini
   const handleAddDishPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
 
     setIsUploadingDishPhoto(true);
 
@@ -88,32 +88,38 @@ export default function RecipeDetailModal({
 
       if (!user) throw new Error('Utilisateur non connecté.');
 
-      let compressedFile = file;
-      try {
-        compressedFile = await compressImage(file);
-      } catch {
-        // conserver original
+      const newUrls: string[] = [];
+
+      for (let i = 0; i < rawFiles.length; i++) {
+        const file = rawFiles[i];
+        let compressedFile = file;
+        try {
+          compressedFile = await compressImage(file);
+        } catch {
+          // conserver original
+        }
+
+        const fileExt = 'jpg';
+        const fileName = `${user.id}/${recipe.id}_dish_${Date.now()}_${i}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('recipe-photos')
+          .upload(fileName, compressedFile, {
+            contentType: 'image/jpeg',
+            upsert: true,
+          });
+
+        if (uploadError || !uploadData) {
+          throw new Error(uploadError?.message || "Échec de l'upload.");
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('recipe-photos')
+          .getPublicUrl(fileName);
+
+        newUrls.push(publicUrlData.publicUrl);
       }
 
-      const fileExt = 'jpg';
-      const fileName = `${user.id}/${recipe.id}_dish_${Date.now()}.${fileExt}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('recipe-photos')
-        .upload(fileName, compressedFile, {
-          contentType: 'image/jpeg',
-          upsert: true,
-        });
-
-      if (uploadError || !uploadData) {
-        throw new Error(uploadError?.message || "Échec de l'upload.");
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from('recipe-photos')
-        .getPublicUrl(fileName);
-
-      const newPhotoUrl = publicUrlData.publicUrl;
-      const updatedPhotos = [...(recipe.dish_photos || []), newPhotoUrl];
+      const updatedPhotos = [...(recipe.dish_photos || []), ...newUrls];
 
       const { data: updatedRecipe, error: updateError } = await supabase
         .from('recipes')
@@ -130,7 +136,9 @@ export default function RecipeDetailModal({
       if (updatedRecipe && onUpdateRecipe) {
         onUpdateRecipe(updatedRecipe as Recipe);
       }
-      setActiveHeroPhoto(newPhotoUrl);
+      if (newUrls[0]) {
+        setActiveHeroPhoto(newUrls[0]);
+      }
       confetti({
         particleCount: 50,
         spread: 60,
@@ -138,7 +146,7 @@ export default function RecipeDetailModal({
       });
     } catch (err: any) {
       console.error(err);
-      alert('Erreur lors de l\'ajout de la photo: ' + err.message);
+      alert("Erreur lors de l'ajout de la photo: " + err.message);
     } finally {
       setIsUploadingDishPhoto(false);
       if (addDishPhotoInputRef.current) addDishPhotoInputRef.current.value = '';
@@ -447,7 +455,11 @@ export default function RecipeDetailModal({
             <input
               ref={addDishPhotoInputRef}
               type="file"
-              accept="image/*"
+              multiple
+              accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+              onClick={(e) => {
+                (e.target as HTMLInputElement).value = '';
+              }}
               onChange={handleAddDishPhoto}
               className="hidden"
             />

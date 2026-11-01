@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles, Pencil, Camera, Layers } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles, Pencil, Camera, Layers, Image as ImageIcon } from 'lucide-react';
 import { Ingredient, Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/imageCompression';
 import TagInput from '@/components/TagInput';
 
 interface RecipeEditModalProps {
@@ -33,8 +34,10 @@ export default function RecipeEditModal({
   const [scanImageUrls, setScanImageUrls] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const addDishPhotoInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -100,6 +103,57 @@ export default function RecipeEditModal({
     }
   };
 
+  // Ajout de photos depuis la galerie ou l'appareil
+  const handleAddDishPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) throw new Error('Utilisateur non connecté.');
+
+      const newUrls: string[] = [];
+
+      for (let i = 0; i < rawFiles.length; i++) {
+        const file = rawFiles[i];
+        let compressedFile = file;
+        try {
+          compressedFile = await compressImage(file);
+        } catch {
+          // conserver brut
+        }
+
+        const fileExt = 'jpg';
+        const fileName = `${user.id}/${recipe.id}_dish_${Date.now()}_${i}.${fileExt}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('recipe-photos')
+          .upload(fileName, compressedFile, {
+            contentType: 'image/jpeg',
+            upsert: true,
+          });
+
+        if (!uploadError && uploadData) {
+          const { data: publicUrlData } = supabase.storage
+            .from('recipe-photos')
+            .getPublicUrl(fileName);
+          newUrls.push(publicUrlData.publicUrl);
+        }
+      }
+
+      setDishPhotos((prev) => [...prev, ...newUrls]);
+    } catch (err: any) {
+      console.error(err);
+      alert("Erreur lors de l'ajout de la photo: " + err.message);
+    } finally {
+      setIsUploadingPhoto(false);
+      if (addDishPhotoInputRef.current) addDishPhotoInputRef.current.value = '';
+    }
+  };
+
   // Sauvegarde des modifications
   const handleSave = async () => {
     if (!title.trim()) {
@@ -154,8 +208,6 @@ export default function RecipeEditModal({
       setIsSaving(false);
     }
   };
-
-  const hasAnyPhotos = (dishPhotos && dishPhotos.length > 0) || (scanImageUrls && scanImageUrls.length > 0) || !!imageUrl;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
@@ -254,58 +306,94 @@ export default function RecipeEditModal({
             </div>
           </div>
 
-          {/* Gestion des photos (Suppression de photos) */}
-          {hasAnyPhotos && (
-            <div className="space-y-3 p-4 rounded-3xl bg-stone-50 border border-stone-200">
+          {/* Gestion des photos */}
+          <div className="space-y-3 p-4 rounded-3xl bg-stone-50 border border-stone-200">
+            <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-stone-700 uppercase tracking-wider block">
-                Gestion des photos associées
+                Photos de la recette ({dishPhotos.length + (scanImageUrls.length > 0 ? scanImageUrls.length : (imageUrl ? 1 : 0))})
               </label>
-
-              {/* Photos du plat */}
-              {dishPhotos.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-amber-800">Photos du plat :</span>
-                  <div className="flex flex-wrap gap-2">
-                    {dishPhotos.map((url, idx) => (
-                      <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
-                        <img src={url} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDishPhoto(idx)}
-                          title="Supprimer cette photo"
-                          className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
-                        >
-                          <Trash2 className="w-4 h-4 text-white" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Scans */}
-              {(scanImageUrls.length > 0 || imageUrl) && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-stone-600">Photos des scans de recette :</span>
-                  <div className="flex flex-wrap gap-2">
-                    {(scanImageUrls.length > 0 ? scanImageUrls : (imageUrl ? [imageUrl] : [])).map((url, idx) => (
-                      <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
-                        <img src={url} alt={`Scan ${idx + 1}`} className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveScanPhoto(url)}
-                          title="Supprimer cette page de scan"
-                          className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
-                        >
-                          <Trash2 className="w-4 h-4 text-white" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => addDishPhotoInputRef.current?.click()}
+                disabled={isUploadingPhoto}
+                className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-amber-300 shadow-2xs hover:bg-amber-50 transition-all"
+              >
+                {isUploadingPhoto ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Envoi...</span>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-600" />
+                    <span>+ Ajouter photo</span>
+                  </>
+                )}
+              </button>
             </div>
-          )}
+
+            {/* Photos du plat */}
+            {dishPhotos.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-bold text-amber-800">Photos de votre plat ({dishPhotos.length}) :</span>
+                <div className="flex flex-wrap gap-2">
+                  {dishPhotos.map((url, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
+                      <img src={url} alt={`Plat ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDishPhoto(idx)}
+                        title="Supprimer cette photo"
+                        className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
+                      >
+                        <Trash2 className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Scans */}
+            {(scanImageUrls.length > 0 || imageUrl) && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-bold text-stone-600">Photos des scans de recette :</span>
+                <div className="flex flex-wrap gap-2">
+                  {(scanImageUrls.length > 0 ? scanImageUrls : (imageUrl ? [imageUrl] : [])).map((url, idx) => (
+                    <div key={idx} className="relative w-16 h-16 rounded-2xl overflow-hidden border border-stone-300 shadow-2xs group">
+                      <img src={url} alt={`Scan ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveScanPhoto(url)}
+                        title="Supprimer cette page de scan"
+                        className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-80 hover:opacity-100 transition-opacity cursor-pointer hover:bg-rose-600/70"
+                      >
+                        <Trash2 className="w-4 h-4 text-white" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dishPhotos.length === 0 && scanImageUrls.length === 0 && !imageUrl && (
+              <p className="text-[11px] text-stone-400 italic">
+                Aucune photo associée. Cliquez sur &quot;+ Ajouter photo&quot; pour en ajouter depuis votre galerie !
+              </p>
+            )}
+
+            <input
+              ref={addDishPhotoInputRef}
+              type="file"
+              multiple
+              accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+              onClick={(e) => {
+                (e.target as HTMLInputElement).value = '';
+              }}
+              onChange={handleAddDishPhoto}
+              className="hidden"
+            />
+          </div>
 
           {/* Ingrédients */}
           <div className="space-y-3">

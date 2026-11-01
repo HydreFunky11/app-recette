@@ -83,9 +83,9 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
 
   // 1. Scan direct (1 seule photo -> analyse instantanée !)
   const handleDirectPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
+    const file = rawFiles[0];
 
     setError(null);
     let finalFile = file;
@@ -105,9 +105,9 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
 
   // 2. Mode multi-pages : ajout d'une photo prise via la caméra
   const handleAddPageCamera = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
+    const file = rawFiles[0];
 
     setError(null);
     let finalFile = file;
@@ -125,16 +125,15 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
 
   // 3. Mode multi-pages : ajout de photos depuis la galerie
   const handleAddPageGallery = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    e.target.value = '';
-    if (!files || files.length === 0) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
 
     setError(null);
     const compressedFiles: File[] = [];
     const previews: string[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i];
       let finalFile = file;
       try {
         finalFile = await compressImage(file);
@@ -152,16 +151,15 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
 
   // 4. Galerie accueil (1 ou plusieurs photos -> analyse instantanée)
   const handleGallerySelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    e.target.value = '';
-    if (!files || files.length === 0) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
 
     setError(null);
     const compressedFiles: File[] = [];
     const previews: string[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i];
       let finalFile = file;
       try {
         finalFile = await compressImage(file);
@@ -474,7 +472,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
         <input
           ref={directCameraInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
           capture="environment"
           onClick={(e) => {
             (e.target as HTMLInputElement).value = '';
@@ -487,7 +485,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
         <input
           ref={multiCameraInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
           capture="environment"
           onClick={(e) => {
             (e.target as HTMLInputElement).value = '';
@@ -501,7 +499,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
           ref={galleryInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
           onClick={(e) => {
             (e.target as HTMLInputElement).value = '';
           }}
@@ -514,7 +512,7 @@ export default function ScannerModal({ isOpen, onClose, onScanComplete }: Scanne
           ref={multiGalleryInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
           onClick={(e) => {
             (e.target as HTMLInputElement).value = '';
           }}
