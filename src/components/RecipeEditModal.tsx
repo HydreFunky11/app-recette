@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles, Pencil, Camera, Layers } from 'lucide-react';
 import { Ingredient, Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
+import TagInput from '@/components/TagInput';
 
 interface RecipeEditModalProps {
   isOpen: boolean;
   recipe: Recipe | null;
+  existingTags?: string[];
   onClose: () => void;
   onUpdated: (recipe: Recipe) => void;
 }
@@ -15,6 +17,7 @@ interface RecipeEditModalProps {
 export default function RecipeEditModal({
   isOpen,
   recipe,
+  existingTags = [],
   onClose,
   onUpdated,
 }: RecipeEditModalProps) {
@@ -25,7 +28,7 @@ export default function RecipeEditModal({
   const [cookTime, setCookTime] = useState(20);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [steps, setSteps] = useState<string[]>([]);
-  const [tags, setTags] = useState<string>('');
+  const [tags, setTags] = useState<string[]>([]);
   const [dishPhotos, setDishPhotos] = useState<string[]>([]);
   const [scanImageUrls, setScanImageUrls] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -43,7 +46,7 @@ export default function RecipeEditModal({
       setCookTime(recipe.cook_time_minutes || 20);
       setIngredients(recipe.ingredients || []);
       setSteps(recipe.steps || []);
-      setTags(recipe.tags?.join(', ') || '');
+      setTags(recipe.tags || []);
       setDishPhotos(recipe.dish_photos || []);
       setScanImageUrls(recipe.scan_image_urls || []);
       setImageUrl(recipe.image_url || null);
@@ -108,10 +111,7 @@ export default function RecipeEditModal({
     setError(null);
 
     try {
-      const parsedTags = tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
+      const parsedTags = tags.map((t) => t.trim()).filter(Boolean);
 
       const updatePayload: any = {
         title: title.trim(),
@@ -397,17 +397,12 @@ export default function RecipeEditModal({
             </div>
           </div>
 
-          {/* Tags */}
-          <div>
-            <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-              Étiquettes (séparées par des virgules)
-            </label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="Dessert, Chocolat, Rapide"
-              className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 bg-stone-50 text-xs text-stone-800"
+          {/* Tags Personnalisés */}
+          <div className="pt-2">
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              suggestedTags={existingTags}
             />
           </div>
         </div>

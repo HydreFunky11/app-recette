@@ -5,11 +5,13 @@ import { X, Check, Plus, Trash2, Clock, Users, Flame, Save, Loader2, Sparkles } 
 import { ExtractedRecipeData, Ingredient, Recipe } from '@/types/database';
 import { createClient } from '@/lib/supabase/client';
 import confetti from 'canvas-confetti';
+import TagInput from '@/components/TagInput';
 
 interface RecipeReviewModalProps {
   isOpen: boolean;
   initialData: ExtractedRecipeData | null;
   imageFiles?: File[] | null;
+  existingTags?: string[];
   onClose: () => void;
   onSaved: (recipe: Recipe) => void;
 }
@@ -18,6 +20,7 @@ export default function RecipeReviewModal({
   isOpen,
   initialData,
   imageFiles,
+  existingTags = [],
   onClose,
   onSaved,
 }: RecipeReviewModalProps) {
@@ -28,7 +31,7 @@ export default function RecipeReviewModal({
   const [cookTime, setCookTime] = useState(initialData?.cook_time_minutes || 20);
   const [ingredients, setIngredients] = useState<Ingredient[]>(initialData?.ingredients || []);
   const [steps, setSteps] = useState<string[]>(initialData?.steps || []);
-  const [tags, setTags] = useState<string>(initialData?.tags?.join(', ') || 'Plat, Maison');
+  const [tags, setTags] = useState<string[]>(initialData?.tags || ['Maison']);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,11 +76,16 @@ export default function RecipeReviewModal({
 
       // Normalisation des tags
       if (Array.isArray(initialData.tags) && initialData.tags.length > 0) {
-        setTags(initialData.tags.join(', '));
+        setTags(initialData.tags.map((t) => String(t).trim()).filter(Boolean));
       } else if (typeof initialData.tags === 'string') {
-        setTags(initialData.tags);
+        setTags(
+          (initialData.tags as string)
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+        );
       } else {
-        setTags('Maison');
+        setTags(['Maison']);
       }
     }
   }, [initialData]);
@@ -156,10 +164,7 @@ export default function RecipeReviewModal({
       }
 
       // Formatage des tags
-      const parsedTags = tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean);
+      const parsedTags = tags.map((t) => t.trim()).filter(Boolean);
 
       const mainImageUrl = uploadedImageUrls[0] || null;
 
@@ -406,17 +411,12 @@ export default function RecipeReviewModal({
             </div>
           </div>
 
-          {/* Tags */}
-          <div>
-            <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-              Étiquettes (séparées par des virgules)
-            </label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="Dessert, Chocolat, Rapide"
-              className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 bg-stone-50 text-xs text-stone-800"
+          {/* Tags Personnalisés */}
+          <div className="pt-2">
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              suggestedTags={existingTags}
             />
           </div>
         </div>

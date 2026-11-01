@@ -44,7 +44,7 @@ export default function RecipeCard({ recipe, onClick, onToggleFavorite }: Recipe
             ) : isMultiPage ? (
               <span>📑 {recipe.scan_image_urls!.length} pages</span>
             ) : (
-              <span>{recipe.tags?.[0] || 'Recette'}</span>
+              <span>{recipe.tags?.[0] ? `#${recipe.tags[0]}` : 'Recette'}</span>
             )}
           </div>
 
@@ -71,6 +71,25 @@ export default function RecipeCard({ recipe, onClick, onToggleFavorite }: Recipe
         <p className="mt-1 text-xs text-stone-500 line-clamp-1">
           {recipe.ingredients.map((ing) => ing.name).join(', ') || 'Aucun ingrédient spécifié'}
         </p>
+
+        {/* Tags */}
+        {recipe.tags && recipe.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {recipe.tags.slice(0, 3).map((tag, idx) => (
+              <span
+                key={idx}
+                className="px-1.5 py-0.5 rounded-md bg-stone-100 text-stone-600 text-[10px] font-medium"
+              >
+                #{tag}
+              </span>
+            ))}
+            {recipe.tags.length > 3 && (
+              <span className="text-[10px] text-stone-400 font-medium self-center">
+                +{recipe.tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Meta tags (Temps, portions) */}

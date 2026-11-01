@@ -28,6 +28,7 @@ interface RecipeDetailModalProps {
   onToggleFavorite: (id: string, isFav: boolean) => void;
   onEdit: (recipe: Recipe) => void;
   onUpdateRecipe?: (updated: Recipe) => void;
+  onSelectTag?: (tag: string) => void;
 }
 
 export default function RecipeDetailModal({
@@ -37,6 +38,7 @@ export default function RecipeDetailModal({
   onToggleFavorite,
   onEdit,
   onUpdateRecipe,
+  onSelectTag,
 }: RecipeDetailModalProps) {
   const [checkedIngredients, setCheckedIngredients] = useState<Record<number, boolean>>({});
   const [completedSteps, setCompletedSteps] = useState<Record<number, boolean>>({});
@@ -321,12 +323,20 @@ export default function RecipeDetailModal({
           <div>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {recipe.tags?.map((tag, idx) => (
-                <span
+                <button
                   key={idx}
-                  className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200/60 text-amber-800 text-[11px] font-semibold"
+                  type="button"
+                  onClick={() => {
+                    if (onSelectTag) {
+                      onSelectTag(tag);
+                      onClose();
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 hover:border-amber-300 border border-amber-200/60 text-amber-800 text-[11px] font-semibold transition-all cursor-pointer"
+                  title={`Filtrer les recettes par #${tag}`}
                 >
-                  {tag}
-                </span>
+                  #{tag}
+                </button>
               ))}
             </div>
             <h1 className="text-2xl font-bold text-stone-900 font-serif leading-tight">

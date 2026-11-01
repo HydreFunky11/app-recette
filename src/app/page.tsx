@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Recipe, ExtractedRecipeData } from '@/types/database';
 import RecipeCard from '@/components/RecipeCard';
@@ -20,6 +20,9 @@ import {
   BookOpen,
   ChefHat,
   Loader2,
+  Tag as TagIcon,
+  ArrowUpDown,
+  X,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -28,9 +31,11 @@ export default function HomePage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
 
-  // Filtres
+  // Filtres et Tri
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'favorites'>('all');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'recent' | 'title' | 'prepTime'>('recent');
 
   // Modales
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -157,30 +162,65 @@ export default function HomePage() {
       .toLowerCase()
       .trim();
 
-  // Filtrage intelligent (par titre, ingrédient(s), ou étiquette)
-  const filteredRecipes = recipes.filter((recipe) => {
-    if (activeFilter === 'favorites' && !recipe.is_favorite) {
-      return false;
-    }
-
-    if (!searchQuery.trim()) return true;
-
-    // Découper la recherche en mots-clés (ex: "farine chocolat" ou "pomme, beurre")
-    const terms = normalize(searchQuery).split(/[ ,+]+/).filter(Boolean);
-
-    // Tous les termes tapés doivent se retrouver dans la recette (titre, ingrédient ou tag)
-    return terms.every((term) => {
-      const inTitle = normalize(recipe.title).includes(term);
-      const inDesc = recipe.description ? normalize(recipe.description).includes(term) : false;
-      const inTags = recipe.tags?.some((t) => normalize(t).includes(term));
-      const inIngredients = recipe.ingredients?.some((ing) => {
-        const name = typeof ing === 'string' ? ing : ing.name;
-        return normalize(name || '').includes(term);
+  // Extraction de tous les tags personnalisés avec leur occurrence
+  const allTagsWithCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    recipes.forEach((r) => {
+      r.tags?.forEach((t) => {
+        const clean = String(t).trim();
+        if (clean) counts[clean] = (counts[clean] || 0) + 1;
       });
-
-      return inTitle || inDesc || inTags || inIngredients;
     });
-  });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [recipes]);
+
+  // Filtrage intelligent (favoris, tags personnalisés, ingrédients) et Tri
+  const filteredRecipes = useMemo(() => {
+    const result = recipes.filter((recipe) => {
+      if (activeFilter === 'favorites' && !recipe.is_favorite) {
+        return false;
+      }
+
+      if (
+        selectedTag &&
+        !recipe.tags?.some((t) => t.toLowerCase() === selectedTag.toLowerCase())
+      ) {
+        return false;
+      }
+
+      if (!searchQuery.trim()) return true;
+
+      // Découper la recherche en mots-clés (ex: "farine chocolat" ou "pomme, beurre")
+      const terms = normalize(searchQuery).split(/[ ,+]+/).filter(Boolean);
+
+      // Tous les termes tapés doivent se retrouver dans la recette (titre, ingrédient ou tag)
+      return terms.every((term) => {
+        const inTitle = normalize(recipe.title).includes(term);
+        const inDesc = recipe.description ? normalize(recipe.description).includes(term) : false;
+        const inTags = recipe.tags?.some((t) => normalize(t).includes(term));
+        const inIngredients = recipe.ingredients?.some((ing) => {
+          const name = typeof ing === 'string' ? ing : ing.name;
+          return normalize(name || '').includes(term);
+        });
+
+        return inTitle || inDesc || inTags || inIngredients;
+      });
+    });
+
+    // Application du tri sélectionné
+    return [...result].sort((a, b) => {
+      if (sortBy === 'title') {
+        return a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' });
+      }
+      if (sortBy === 'prepTime') {
+        return (a.prep_time_minutes || 0) - (b.prep_time_minutes || 0);
+      }
+      // 'recent' par défaut
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateB - dateA;
+    });
+  }, [recipes, activeFilter, selectedTag, searchQuery, sortBy]);
 
   if (loadingAuth) {
     return (
@@ -294,29 +334,97 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Filtres Onglets */}
-        <div className="flex items-center gap-2 mt-3 pb-1">
+        {/* Filtres Onglets & Tags Horizontaux */}
+        <div className="flex items-center gap-1.5 mt-3 pb-1 overflow-x-auto no-scrollbar">
           <button
-            onClick={() => setActiveFilter('all')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all cursor-pointer ${
-              activeFilter === 'all'
+            onClick={() => {
+              setActiveFilter('all');
+              setSelectedTag(null);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all cursor-pointer ${
+              activeFilter === 'all' && !selectedTag
                 ? 'bg-amber-500 text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
             Toutes ({recipes.length})
           </button>
+
           <button
-            onClick={() => setActiveFilter('favorites')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeFilter === 'favorites'
+            onClick={() => {
+              setActiveFilter('favorites');
+              setSelectedTag(null);
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeFilter === 'favorites' && !selectedTag
                 ? 'bg-rose-500 text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
             <Heart className="w-3.5 h-3.5" />
-            Favoris ({recipes.filter((r) => r.is_favorite).length})
+            <span>Favoris ({recipes.filter((r) => r.is_favorite).length})</span>
           </button>
+
+          {/* Tags personnalisés */}
+          {allTagsWithCounts.map(([tagName, count]) => {
+            const isSelected = selectedTag?.toLowerCase() === tagName.toLowerCase();
+            return (
+              <button
+                key={tagName}
+                onClick={() => {
+                  setSelectedTag(isSelected ? null : tagName);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                }`}
+              >
+                <span>#{tagName}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isSelected
+                      ? 'bg-amber-600/60 text-white'
+                      : 'bg-stone-200/80 text-stone-500'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Barre de statut résultats et Tri */}
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-stone-100 text-xs">
+          <div className="flex items-center gap-1.5 text-stone-500">
+            <span className="font-semibold text-stone-700">
+              {filteredRecipes.length} recette{filteredRecipes.length > 1 ? 's' : ''}
+            </span>
+            {selectedTag && (
+              <button
+                onClick={() => setSelectedTag(null)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold hover:bg-amber-200 transition-colors cursor-pointer"
+                title="Supprimer le filtre tag"
+              >
+                <span>#{selectedTag}</span>
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-stone-500">
+            <ArrowUpDown className="w-3 h-3 text-stone-400 shrink-0" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-stone-100/90 hover:bg-stone-100 border border-stone-200/80 rounded-lg px-2 py-1 text-[11px] font-semibold text-stone-700 outline-none cursor-pointer transition-colors"
+            >
+              <option value="recent">Plus récentes</option>
+              <option value="title">Nom (A-Z)</option>
+              <option value="prepTime">Temps de prépa</option>
+            </select>
+          </div>
         </div>
       </header>
 
@@ -390,6 +498,7 @@ export default function HomePage() {
           isOpen={isReviewOpen}
           initialData={scannedData}
           imageFiles={scannedImageFiles}
+          existingTags={allTagsWithCounts.map(([t]) => t)}
           onClose={() => {
             setIsReviewOpen(false);
             setScannedData(null);
@@ -406,12 +515,14 @@ export default function HomePage() {
         onToggleFavorite={(id, isFav) => handleToggleFavorite(null, id, isFav)}
         onEdit={handleOpenEdit}
         onUpdateRecipe={handleRecipeUpdated}
+        onSelectTag={(tag) => setSelectedTag(tag)}
       />
 
       {recipeToEdit && (
         <RecipeEditModal
           isOpen={!!recipeToEdit}
           recipe={recipeToEdit}
+          existingTags={allTagsWithCounts.map(([t]) => t)}
           onClose={() => setRecipeToEdit(null)}
           onUpdated={handleRecipeUpdated}
         />
